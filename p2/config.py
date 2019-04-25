@@ -8,6 +8,7 @@ class Config:
     LR = 1e-3
     EPOCHS = 10
 
+    INPUT_DIM = 40
     LISTENER_HIDDEN_SIZE = 256
     SPELLER_HIDDEN_SIZE = 512
 

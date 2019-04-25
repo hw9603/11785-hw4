@@ -17,7 +17,7 @@ class SpeechDataset(Dataset):
             for y_ in y:
                 for word in y_:
                     self.total_chars += len(word)
-            self.y = [torch.tensor(y_) for y_ in y]
+            self.y = [y_ for y_ in y]
 
     def __len__(self):
         return len(self.x)
@@ -30,7 +30,7 @@ class SpeechDataset(Dataset):
                     labels.append(CHARACTER_LIST.index(chr(c)))
                 labels.append(CHARACTER_LIST.index(" "))
             labels[-1] = CHARACTER_LIST.index(Config.EOS)
-            return self.x[item].to(Config.DEVICE), labels.to(Config.DEVICE)
+            return self.x[item].to(Config.DEVICE), torch.tensor(labels).to(Config.DEVICE)
         else:
             return self.x[item].to(Config.DEVICE), torch.tensor([-1]).to(Config.DEVICE)
 
@@ -57,6 +57,7 @@ def get_loaders():
     dev_y_file = data_path + "dev_transcripts.npy"
     test_x_file = data_path + "test.npy"
 
+    print("loading the raw data...")
     train_x = np.load(train_x_file, encoding='bytes')
     train_y = np.load(train_y_file, encoding='bytes')
     dev_x = np.load(dev_x_file, encoding='bytes')

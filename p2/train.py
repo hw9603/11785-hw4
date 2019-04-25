@@ -1,27 +1,39 @@
 import time
+import random
 import torch
 import torch.nn as nn
 from dataloader import get_loaders
 from config import Config
-from model import LAS
+from model import Listener, Speller
+from utils import ER
 
 
-def train(train_loader, dev_loader, model, criterion, optimizer, e):
-    model.train()
-    model.to(Config.DEVICE)
+def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer,
+          criterion, e, teacher_forcing_ratio=0):
+    encoder.train()
+    decoder.train()
+    encoder.to(Config.DEVICE)
+    decoder.to(Config.DEVICE)
 
     avg_loss = 0.0
     t = time.time()
     print("epoch", e)
     epoch_loss = 0
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(train_loader):
-        optimizer.zero_grad()
-        # data_batch = data_batch.to(DEVICE)
-        logits = model(data_batch, input_lengths)
-        # print(logits)  # shape: [max_seq_len, batch_size, 47]
-        loss = criterion(logits, label_batch)
-        loss.mean().backward()
-        optimizer.step()
+        encoder_optimizer.zero_grad()
+        decoder_optimizer.zero_grad()
+
+        encoder_outputs, hidden = encoder(data_batch)
+        decoder_outputs, hidden = decoder(encoder_outputs, hidden)
+
+        print(decoder_outputs)
+        print("*********************************")
+        print(label_batch)
+
+        loss = criterion(decoder_outputs, label_batch)
+        loss.backward()
+        encoder_optimizer.step()
+        decoder_optimizer.step()
         epoch_loss += loss.item()
         avg_loss += loss.item()
         if batch_idx % Config.LOG_INTERVAL == Config.LOG_INTERVAL - 1:
@@ -33,28 +45,33 @@ def train(train_loader, dev_loader, model, criterion, optimizer, e):
     print("Loss: {}".format(epoch_loss / len(train_loader)))
 
 
-def eval(loader, model):
-    model.eval()
-    model.to(Config.DEVICE)
-    # error_rate_op = ER()
+def eval(loader, encoder, decoder):
+    encoder.eval()
+    decoder.eval()
+    encoder.to(Config.DEVICE)
+    decoder.to(Config.DEVICE)
+
     error = 0
-    for data_batch, labels_batch, input_lengths, target_lengths in loader:
-        # data_batch = data_batch.to(DEVICE)
-        predictions_batch = model(data_batch, input_lengths)
-        # error += error_rate_op(predictions_batch, input_lengths, labels_batch)
-    # print("total error: ", error / loader.dataset.total_phonemes)
-    # return error / loader.dataset.total_phonemes
+    error_rate_op = ER()
+    for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(loader):
+        encoder_outputs, hidden = encoder(data_batch)
+        decoder_outputs, hidden = decoder(encoder_outputs, hidden)
+        error += error_rate_op(decoder_outputs, input_lengths, label_batch)
+    print("total error: ", error / loader.dataset.total_chars)
+    return error / loader.dataset.total_chars
 
 
 def main():
     train_loader, dev_loader, test_loader = get_loaders()
-    model = LAS()
-    optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR)
+    encoder = Listener(input_dim=40, hidden_dim=Config.LISTENER_HIDDEN_SIZE)
+    decoder = Speller(hidden_size=Config.SPELLER_HIDDEN_SIZE, output_size=Config.NUM_CLASS)
+    encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
+    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
     criterion = nn.CrossEntropyLoss()
     for e in range(Config.EPOCHS):
-        train(train_loader, dev_loader, model, criterion, optimizer, e)
-        # per = eval(dev_loader, model)
-        torch.save(model.state_dict(), "models/LAS" + str(e) + ".pt")
+        train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, e)
+        torch.save(encoder.state_dict(), "models/encoder" + str(e) + ".pt")
+        torch.save(decoder.state_dict(), "models/decoder" + str(e) + ".pt")
     print("Done! Yeah~")
 
 

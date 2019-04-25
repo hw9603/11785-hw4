@@ -13,7 +13,10 @@ class SpeechDataset(Dataset):
         self.is_test = is_test
         self.x = [torch.tensor(x_) for x_ in x]
         if not is_test:
-            self.total_words = sum(len(y_) for y_ in y)
+            self.total_chars = 0
+            for y_ in y:
+                for word in y_:
+                    self.total_chars += len(word)
             self.y = [torch.tensor(y_) for y_ in y]
 
     def __len__(self):

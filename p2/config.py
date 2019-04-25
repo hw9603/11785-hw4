@@ -3,8 +3,14 @@ import torch
 
 class Config:
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    EOS = '<eos>'
-    BATCH_SIZE = 64
+    BATCH_SIZE = 8
     LOG_INTERVAL = 1
     LR = 1e-3
     EPOCHS = 10
+
+    LISTENER_HIDDEN_SIZE = 256
+    SPELLER_HIDDEN_SIZE = 512
+
+    NUM_CLASS = 33
+
+    EOS = '<eos>'

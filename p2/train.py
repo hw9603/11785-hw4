@@ -24,11 +24,10 @@ def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder
         decoder_optimizer.zero_grad()
 
         encoder_outputs, hidden = encoder(data_batch, input_lengths)
-        decoder_outputs, hidden = decoder(encoder_outputs, hidden)
+        decoder_outputs, hidden = decoder(encoder_outputs)
 
         print(decoder_outputs)
         print("*********************************")
-        print(label_batch)
 
         loss = criterion(decoder_outputs, label_batch)
         loss.backward()
@@ -65,7 +64,10 @@ def main():
     print(Config.DEVICE)
     train_loader, dev_loader, test_loader = get_loaders()
     encoder = Listener(input_dim=Config.INPUT_DIM, hidden_dim=Config.LISTENER_HIDDEN_SIZE)
-    decoder = Speller(hidden_size=Config.SPELLER_HIDDEN_SIZE, output_size=Config.NUM_CLASS)
+    decoder = Speller(hidden_size=Config.SPELLER_HIDDEN_SIZE,
+                      embed_size=Config.SPELLER_EMBED_SIZE,
+                      context_size=0,  # TODO: this is for debug purpose (without attention)
+                      output_size=Config.NUM_CLASS)
     encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
     decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
     criterion = nn.CrossEntropyLoss()

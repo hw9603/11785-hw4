@@ -4,6 +4,7 @@ import torch.nn.utils.rnn as rnn
 from torch.autograd import Variable
 import torch.nn.functional as F
 from config import Config
+from character_list import CHARACTER_LIST
 
 
 class pBLSTM(nn.Module):
@@ -36,7 +37,6 @@ class Listener(nn.Module):
         self.dropout2 = nn.Dropout(p=0.3)
 
     def forward(self, x, lengths):
-        print(lengths)
         x = rnn.pad_sequence(x, batch_first=True)  # (batch_size, length, dim)
         x, hidden, lengths = self.pblstm1(x, lengths)
         x, hidden, lengths = self.pblstm2(x, lengths)
@@ -46,18 +46,41 @@ class Listener(nn.Module):
 
 
 class Speller(nn.Module):
-    def __init__(self, hidden_size, output_size):
+    def __init__(self, hidden_size, embed_size, context_size, output_size, num_layer=2, max_steps=250):
         super(Speller, self).__init__()
         self.hidden_size = hidden_size
+        self.max_steps = max_steps
 
-        self.embedding = nn.Embedding(output_size, hidden_size)
-        self.rnn = nn.LSTM(input_size=hidden_size, hidden_size=hidden_size)
-        self.out = nn.Linear(hidden_size, output_size)
+        self.embedding = nn.Embedding(output_size, embed_size)
+        self.rnn = nn.ModuleList()
+        for i in range(num_layer):
+            if i == 0:
+                self.rnn.append(nn.LSTMCell(hidden_size + context_size, hidden_size))
+            else:
+                self.rnn.append(nn.LSTMCell(hidden_size, hidden_size))
+        self.character_distribution = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, input, hidden):
-        output = self.embedding(input).view(1, 1, -1)
-        output = F.relu(output)
-        output, hidden = self.rnn(output, hidden)
-        output = self.softmax(self.out(output[0]))
-        return output, hidden
+    def forward(self, listener_output):
+        # input shape: (batch_size, length, listener_hidden_dim * 2)
+        batch_size = listener_output.shape[0]
+        output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS))
+        states = [None, None]
+        outputs = []
+        for i in range(self.max_steps):
+            output, states = self.forward_step(listener_output, output_char, states)
+            outputs.append(output)
+            _, output_char = torch.max(output, dim=1)
+        return torch.stack(outputs, dim=1)
+
+    def forward_step(self, listener_output, last_char, states):
+        embed = self.embedding(last_char)
+        # rnn_input = torch.cat((embed, context), dim=1)
+        rnn_input = embed
+        new_states = []
+        for i, cell in enumerate(self.rnn):
+            state = cell(rnn_input, states[i])
+            new_states.append(state)
+        rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
+        output = self.softmax(self.character_distribution(rnn_output))
+        return output, new_states

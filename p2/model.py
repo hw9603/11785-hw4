@@ -20,13 +20,11 @@ class pBLSTM(nn.Module):
             seq_length -= 1
         # reduce the timestep
         padded_input = x.contiguous().view(batch_size, int(seq_length // 2), feature_dim * 2)
+        lengths = [l // 2 for l in lengths]
         packed_input = rnn.pack_padded_sequence(padded_input, lengths, batch_first=True)
-        output_packed, hidden = self.blstm(packed_input)  # TODO: what is the shape of hidden?
-        print(output_packed)
-        print("+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=")
-        print(hidden)
-        output_padded, _ = rnn.pad_packed_sequence(output_packed)
-        return output_packed, hidden
+        output_packed, hidden = self.blstm(packed_input)
+        output_padded, _ = rnn.pad_packed_sequence(output_packed, batch_first=True)
+        return output_padded, hidden, lengths
 
 
 class Listener(nn.Module):
@@ -40,9 +38,9 @@ class Listener(nn.Module):
     def forward(self, x, lengths):
         print(lengths)
         x = rnn.pad_sequence(x, batch_first=True)  # (batch_size, length, dim)
-        x, hidden = self.pblstm1(x, lengths)
-        x, hidden = self.pblstm2(x, lengths)
-        x, hidden = self.pblstm3(x, lengths)
+        x, hidden, lengths = self.pblstm1(x, lengths)
+        x, hidden, lengths = self.pblstm2(x, lengths)
+        x, hidden, lengths = self.pblstm3(x, lengths)
         x = self.dropout2(x)
         return x, hidden
 

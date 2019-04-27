@@ -1,7 +1,29 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 import Levenshtein as L
 from character_list import CHARACTER_LIST
+
+
+def calculate_loss(preds, trues, seq_length, criterion):
+    # preds shape: (batch, length, 33)
+    # trues shape: (batch, length)
+    batch_size = preds.shape[0]
+    assert preds.shape[0] == trues.shape[0]
+
+    avg_batch_loss = 0
+    for i, pred in enumerate(preds):
+        # pred shape: (length, 33)
+        # true shape: (length)
+        true = trues[i]
+        mask = [idx < seq_length[i] for idx in range(true.shape[0])]
+        loss = criterion(pred, true, reduce=False)  # TODO: it might not be a numpy array. check type
+        loss = np.ma.compressed(np.ma.masked_where(mask == 0, loss))
+        # sum over sequence
+        batch_loss = np.sum(loss)
+        avg_batch_loss += batch_loss
+    avg_batch_loss /= batch_size
+    return avg_batch_loss
 
 
 class ER:

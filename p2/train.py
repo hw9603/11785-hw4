@@ -5,7 +5,7 @@ import torch.nn as nn
 from dataloader import get_loaders
 from config import Config
 from model import Listener, Speller
-from utils import ER
+from utils import ER, calculate_loss
 
 
 def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer,
@@ -24,12 +24,13 @@ def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder
         decoder_optimizer.zero_grad()
 
         encoder_outputs, hidden = encoder(data_batch, input_lengths)
-        decoder_outputs, hidden = decoder(encoder_outputs)
+        decoder_outputs = decoder(encoder_outputs, teacher_forcing_ratio, label_batch)
 
-        print(decoder_outputs)
+        print(decoder_outputs.shape)
         print("*********************************")
+        print(label_batch.shape)
 
-        loss = criterion(decoder_outputs, label_batch)
+        loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
         encoder_optimizer.step()
         decoder_optimizer.step()

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.utils.rnn as rnn
 import torch.nn.functional as F
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader, TensorDataset
@@ -46,6 +47,8 @@ def collate_speech(seq_list):
         y.append(y_)
         x_lens.append(x_.shape[0])
         y_lens.append(y_.shape[0])
+    x = rnn.pad_sequence(x, batch_first=True)
+    y = rnn.pad_sequence(y, batch_first=True)
     return x, y, x_lens, y_lens
 
 

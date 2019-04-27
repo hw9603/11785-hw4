@@ -1,3 +1,4 @@
+import random
 import torch
 import torch.nn as nn
 import torch.nn.utils.rnn as rnn
@@ -37,7 +38,7 @@ class Listener(nn.Module):
         self.dropout2 = nn.Dropout(p=0.3)
 
     def forward(self, x, lengths):
-        x = rnn.pad_sequence(x, batch_first=True)  # (batch_size, length, dim)
+        # x shape: (batch_size, length, dim)
         x, hidden, lengths = self.pblstm1(x, lengths)
         x, hidden, lengths = self.pblstm2(x, lengths)
         x, hidden, lengths = self.pblstm3(x, lengths)
@@ -61,20 +62,26 @@ class Speller(nn.Module):
         self.character_distribution = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, listener_output):
+    def forward(self, listener_output, teacher_forcing_ratio, ground_truth=None):
+        if ground_truth is None:
+            teacher_forcing_ratio = 0
+        use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
         # input shape: (batch_size, length, listener_hidden_dim * 2)
         batch_size = listener_output.shape[0]
-        output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS))
+        output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS)).to(Config.DEVICE)
         states = [None, None]
         outputs = []
-        for i in range(self.max_steps):
+        for i in range(self.max_steps) if ground_truth is None else range(ground_truth.shape[1]):
             output, states = self.forward_step(listener_output, output_char, states)
             outputs.append(output)
-            _, output_char = torch.max(output, dim=1)
+            if use_teacher_forcing:
+                output_char = ground_truth[:, i]
+            else:
+                _, output_char = torch.max(output, dim=1)
         return torch.stack(outputs, dim=1)
 
     def forward_step(self, listener_output, last_char, states):
-        embed = self.embedding(last_char)
+        embed = self.embedding(last_char.long())
         # rnn_input = torch.cat((embed, context), dim=1)
         rnn_input = embed
         new_states = []

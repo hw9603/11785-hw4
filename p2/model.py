@@ -56,9 +56,9 @@ class Speller(nn.Module):
         self.rnn = nn.ModuleList()
         for i in range(num_layer):
             if i == 0:
-                self.rnn.append(nn.LSTMCell(hidden_size + context_size, hidden_size))
+                self.rnn.append(nn.LSTMCell(embed_size + context_size, hidden_size))
             else:
-                self.rnn.append(nn.LSTMCell(hidden_size, hidden_size))
+                self.rnn.append(nn.LSTMCell(embed_size, hidden_size))
         self.character_distribution = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
@@ -66,7 +66,7 @@ class Speller(nn.Module):
         if ground_truth is None:
             teacher_forcing_ratio = 0
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
-        # input shape: (batch_size, length, listener_hidden_dim * 2)
+        # listener_output shape: (batch_size, length, listener_hidden_dim * 2)
         batch_size = listener_output.shape[0]
         output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS)).to(Config.DEVICE)
         states = [None, None]
@@ -91,3 +91,34 @@ class Speller(nn.Module):
         rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
         output = self.softmax(self.character_distribution(rnn_output))
         return output, new_states
+
+
+class Attention(nn.Module):
+    def __init__(self, key_query_val_dim, context_dim, listener_dim, speller_dim):
+        super(Attention, self).__init__()
+        self.query_fc = nn.Linear(speller_dim, key_query_val_dim)  # mlp for query
+        self.key_fc = nn.Linear(listener_dim, key_query_val_dim)  # mlp for key
+        self.value_fc = nn.Linear(listener_dim, context_dim)  # mlp for value
+
+        self.softmax = nn.Softmax()
+        # TODO: do i need to add activation function?
+
+    def forward(self, listener_output, decoder_state, lengths):
+        # listener_output shape: (batch_size, length, listener_hidden_dim * 2)
+        # decoder_state shape: (batch_size, length, ?)
+        # TODO: check all shapes
+        query = self.query_fc(decoder_state)
+        key = self.key_fc(listener_output)
+        value = self.value_fc(listener_output)
+        # TODO: check all shapes
+
+        energy = torch.bmm(query, key)  # TODO: check for shape match
+        attention = self.softmax(energy)
+        # TODO: mask shape and value check
+        mask = attention.data.new(attention.size(0), attention.size(1)).zero_()
+        for i, len in enumerate(lengths):
+            mask[i, :len] = 1
+        masked_attention = F.normalize(mask * attention, p=1)
+        # TODO: check for masked_attention
+        context = torch.bmm(masked_attention, value)
+        return context

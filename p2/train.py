@@ -86,19 +86,19 @@ def main():
     encoder = Listener(input_dim=Config.INPUT_DIM, hidden_dim=Config.LISTENER_HIDDEN_SIZE)
     decoder = Speller(hidden_size=Config.SPELLER_HIDDEN_SIZE,
                       embed_size=Config.SPELLER_EMBED_SIZE,
-                      context_size=0,  # TODO: this is for debug purpose (without attention)
+                      context_size=Config.CONTEXT_SIZE,  # TODO: this is for debug purpose (without attention)
                       output_size=Config.NUM_CLASS)
-    encoder.load_state_dict(torch.load("models/encoder2.pt"))
-    decoder.load_state_dict(torch.load("models/decoder2.pt"))
-    prediction(test_loader, encoder, decoder, "prediction.csv")
-    # encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
-    # decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
-    # criterion = nn.CrossEntropyLoss(reduction='none')
-    # for e in range(Config.EPOCHS):
-    #     train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, e)
-    #     eval(dev_loader, encoder, decoder)
-    #     torch.save(encoder.state_dict(), "models/encoder" + str(e) + ".pt")
-    #     torch.save(decoder.state_dict(), "models/decoder" + str(e) + ".pt")
+    # encoder.load_state_dict(torch.load("models/encoder2.pt"))
+    # decoder.load_state_dict(torch.load("models/decoder2.pt"))
+    # prediction(test_loader, encoder, decoder, "prediction.csv")
+    encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
+    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
+    criterion = nn.CrossEntropyLoss(reduction='none')
+    for e in range(Config.EPOCHS):
+        train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, e)
+        eval(dev_loader, encoder, decoder)
+        torch.save(encoder.state_dict(), "models/encoder" + str(e) + ".pt")
+        torch.save(decoder.state_dict(), "models/decoder" + str(e) + ".pt")
     print("Done! Yeah~")
 
 

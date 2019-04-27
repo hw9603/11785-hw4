@@ -42,7 +42,7 @@ def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder
     print("Loss: {}".format(epoch_loss / len(train_loader)))
 
 
-def eval(loader, encoder, decoder):
+def eval(loader, encoder, decoder, teacher_forcing_ratio=0.9):
     encoder.eval()
     decoder.eval()
     encoder.to(Config.DEVICE)
@@ -51,8 +51,8 @@ def eval(loader, encoder, decoder):
     error = 0
     error_rate_op = ER()
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(loader):
-        encoder_outputs, hidden = encoder(data_batch)
-        decoder_outputs, hidden = decoder(encoder_outputs, hidden)
+        encoder_outputs, hidden = encoder(data_batch, input_lengths)
+        decoder_outputs = decoder(encoder_outputs, teacher_forcing_ratio, label_batch)
         error += error_rate_op(decoder_outputs, input_lengths, label_batch)
     print("total error: ", error / loader.dataset.total_chars)
     return error / loader.dataset.total_chars

@@ -36,29 +36,43 @@ class ER:
         return self.forward(prediction, seq_size, target)
 
     def forward(self, prediction, seq_size, target=None):
-        prediction = torch.transpose(prediction, 0, 1)
-        prediction = prediction.cpu()
-        probs = F.softmax(prediction, dim=2)
-        # output, scores, timesteps, out_seq_len = self.decoder.decode(probs=probs, seq_lens=torch.IntTensor(seq_size))
-        output, out_seq_len = self.decoder()
+        # prediction shape: (batch, length, 33)
+        # target shape: (batch, length)
+        output = self.decoder(prediction)
 
         pred = []
-        for i in range(output.size(0)):
-            pred.append("".join(self.label_map[o] for o in output[i, 0, :out_seq_len[i, 0]]))
+        for i in range(len(output)):
+            # output[i] shape: (length,)
+            p = ""
+            for o in output[i]:
+                if o == CHARACTER_LIST.index(Config.EOS):
+                    break
+                p += self.label_map[o]
+            pred.append(p)
 
         if target is not None:
             true = []
             for t in target:
-                true.append("".join(self.label_map[o] for o in t))
+                tr = ""
+                for o in t:
+                    if o == CHARACTER_LIST.index(Config.EOS):
+                        break
+                    tr += self.label_map[o]
+                true.append(tr)
 
                 ls = 0.
                 for p, t in zip(pred, true):
-                    ls += L.distance(p.replace(" ", ""), t.replace(" ", ""))
+                    ls += L.distance(p, t)
                 print("PER:", ls * 100 / sum(len(s) for s in true))
                 return ls
         else:
             return pred
 
 
-def greedy_decoder():
-    raise NotImplemented
+def greedy_decoder(prediction):
+    # prediction shape: (batch, length, 33)
+    output = []
+    for i, p in enumerate(prediction):
+        # p shape: (length, 33)
+        output.append(torch.max(p, dim=1)[1])
+    return output

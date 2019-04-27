@@ -1,4 +1,5 @@
 import time
+import numpy as np
 import random
 import torch
 import torch.nn as nn
@@ -9,7 +10,7 @@ from utils import ER, calculate_loss
 
 
 def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer,
-          criterion, e, teacher_forcing_ratio=0):
+          criterion, e, teacher_forcing_ratio=0.9):
     encoder.train()
     decoder.train()
     encoder.to(Config.DEVICE)
@@ -26,16 +27,12 @@ def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder
         encoder_outputs, hidden = encoder(data_batch, input_lengths)
         decoder_outputs = decoder(encoder_outputs, teacher_forcing_ratio, label_batch)
 
-        print(decoder_outputs.shape)
-        print("*********************************")
-        print(label_batch.shape)
-
         loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
         encoder_optimizer.step()
         decoder_optimizer.step()
         epoch_loss += loss.item()
-        avg_loss += loss.item()
+        avg_loss += np.exp(loss.item())
         if batch_idx % Config.LOG_INTERVAL == Config.LOG_INTERVAL - 1:
             print("[Train Epoch %d] batch_idx=%d [%.2f%%, time: %.2f min], loss=%.4f" %
                   (e, batch_idx, 100. * batch_idx / len(train_loader), (time.time() - t) / 60,
@@ -71,7 +68,7 @@ def main():
                       output_size=Config.NUM_CLASS)
     encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
     decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(reduction='none')
     for e in range(Config.EPOCHS):
         train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, e)
         eval(dev_loader, encoder, decoder)

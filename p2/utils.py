@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import Levenshtein as L
 from character_list import CHARACTER_LIST
+from config import Config
 
 
 def calculate_loss(preds, trues, seq_length, criterion):
@@ -16,13 +17,13 @@ def calculate_loss(preds, trues, seq_length, criterion):
         # pred shape: (length, 33)
         # true shape: (length)
         true = trues[i]
-        mask = [idx < seq_length[i] for idx in range(true.shape[0])]
-        loss = criterion(pred, true, reduce=False)  # TODO: it might not be a numpy array. check type
-        loss = np.ma.compressed(np.ma.masked_where(mask == 0, loss))
+        mask = torch.tensor([idx < seq_length[i] for idx in range(true.shape[0])]).to(Config.DEVICE)
+        loss = criterion(pred, true)  # tensor
+        loss = torch.where(mask > 0, loss, mask.float())
         # sum over sequence
-        batch_loss = np.sum(loss)
+        batch_loss = torch.sum(loss)
         avg_batch_loss += batch_loss
-    avg_batch_loss /= batch_size
+    avg_batch_loss /= sum(seq_length)
     return avg_batch_loss
 
 

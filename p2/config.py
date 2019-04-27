@@ -4,7 +4,7 @@ import torch
 class Config:
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     BATCH_SIZE = 8
-    LOG_INTERVAL = 1
+    LOG_INTERVAL = 10
     LR = 1e-3
     EPOCHS = 10
 

@@ -31,7 +31,7 @@ def train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder
         loss.backward()
         encoder_optimizer.step()
         decoder_optimizer.step()
-        epoch_loss += loss.item()
+        epoch_loss += np.exp(loss.item())
         avg_loss += np.exp(loss.item())
         if batch_idx % Config.LOG_INTERVAL == Config.LOG_INTERVAL - 1:
             print("[Train Epoch %d] batch_idx=%d [%.2f%%, time: %.2f min], loss=%.4f" %
@@ -58,6 +58,28 @@ def eval(loader, encoder, decoder, teacher_forcing_ratio=0.9):
     return error / loader.dataset.total_chars
 
 
+def prediction(loader, encoder, decoder, output_file):
+    encoder.eval()
+    decoder.eval()
+    encoder.to(Config.DEVICE)
+    decoder.to(Config.DEVICE)
+
+    error_rate_op = ER()
+    fwrite = open(output_file, "w")
+    fwrite.write("Id,Predicted\n")
+    line = 0
+    for batch_idx, (data_batch, _, input_lengths, _) in enumerate(loader):
+        encoder_outputs, hidden = encoder(data_batch, input_lengths)
+        decoder_outputs = decoder(encoder_outputs, 0)
+        decode_strs = error_rate_op(decoder_outputs, input_lengths)
+        for s in decode_strs:
+            if line % Config.LOG_INTERVAL == 0:
+                print(line, s)
+            fwrite.write(str(line) + "," + s + "\n")
+            line += 1
+    return
+
+
 def main():
     print(Config.DEVICE)
     train_loader, dev_loader, test_loader = get_loaders()
@@ -66,14 +88,17 @@ def main():
                       embed_size=Config.SPELLER_EMBED_SIZE,
                       context_size=0,  # TODO: this is for debug purpose (without attention)
                       output_size=Config.NUM_CLASS)
-    encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
-    decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
-    criterion = nn.CrossEntropyLoss(reduction='none')
-    for e in range(Config.EPOCHS):
-        train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, e)
-        eval(dev_loader, encoder, decoder)
-        torch.save(encoder.state_dict(), "models/encoder" + str(e) + ".pt")
-        torch.save(decoder.state_dict(), "models/decoder" + str(e) + ".pt")
+    encoder.load_state_dict(torch.load("models/encoder2.pt"))
+    decoder.load_state_dict(torch.load("models/decoder2.pt"))
+    prediction(test_loader, encoder, decoder, "prediction.csv")
+    # encoder_optimizer = torch.optim.Adam(encoder.parameters(), lr=Config.LR)
+    # decoder_optimizer = torch.optim.Adam(decoder.parameters(), lr=Config.LR)
+    # criterion = nn.CrossEntropyLoss(reduction='none')
+    # for e in range(Config.EPOCHS):
+    #     train(train_loader, dev_loader, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, e)
+    #     eval(dev_loader, encoder, decoder)
+    #     torch.save(encoder.state_dict(), "models/encoder" + str(e) + ".pt")
+    #     torch.save(decoder.state_dict(), "models/decoder" + str(e) + ".pt")
     print("Done! Yeah~")
 
 

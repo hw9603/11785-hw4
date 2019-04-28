@@ -78,8 +78,8 @@ def main():
     criterion = nn.CrossEntropyLoss(reduction='none')
     for e in range(Config.EPOCHS):
         train(train_loader, dev_loader, model, optimizer, criterion, e)
-        eval(dev_loader, model)
         torch.save(model.state_dict(), "models/LAS" + str(e) + ".pt")
+        eval(dev_loader, model)
     print("Done! Yeah~")
 
 

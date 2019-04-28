@@ -50,6 +50,9 @@ class Speller(nn.Module):
     def __init__(self, hidden_size, embed_size, context_size, output_size, attention, num_layer=2, max_steps=250):
         super(Speller, self).__init__()
         self.hidden_size = hidden_size
+        self.embed_size = embed_size
+        self.context_size = context_size
+        self.output_size = output_size
         self.max_steps = max_steps
         self.attention = attention
 
@@ -59,7 +62,7 @@ class Speller(nn.Module):
             if i == 0:
                 self.rnn.append(nn.LSTMCell(embed_size + context_size, hidden_size))
             else:
-                self.rnn.append(nn.LSTMCell(embed_size, hidden_size))
+                self.rnn.append(nn.LSTMCell(hidden_size, hidden_size))
         self.character_distribution = nn.Linear(hidden_size + context_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
@@ -83,14 +86,20 @@ class Speller(nn.Module):
 
     def forward_step(self, listener_output, last_char, states, lengths):
         embed = self.embedding(last_char.long())
-        # TODO: states is None initially...
-        context = self.attention(listener_output, states, lengths)
+        # embed shape: (batch_size, SPELLER_EMBED_SIZE)
+        if states[0] is None:
+            # assign 0's to context at the first time step
+            context = torch.zeros(embed.shape[0], self.context_size).to(Config.DEVICE)
+            # context shape: (batch_size, CONTEXT_SIZE)
+        else:
+            context = self.attention(listener_output, states[-1][0], lengths)
         rnn_input = torch.cat((embed, context), dim=1)
-        # TODO: check for rnn_input shape
+        # rnn_input: (batch_size, SPELLER_EMBED_SIZE + CONTEXT_SIZE)
         new_states = []
         for i, cell in enumerate(self.rnn):
             state = cell(rnn_input, states[i])
             new_states.append(state)
+            rnn_input = state[0]
         rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
         concat_output = torch.cat((rnn_output, context), dim=1)
         output = self.softmax(self.character_distribution(concat_output))
@@ -108,15 +117,14 @@ class Attention(nn.Module):
         # TODO: do i need to add activation function?
 
     def forward(self, listener_output, decoder_state, lengths):
-        # listener_output shape: (batch_size, length, listener_hidden_dim * 2)
-        # decoder_state shape: (batch_size, length, ?)
-        # TODO: check all shapes
-        query = self.query_fc(decoder_state)
-        key = self.key_fc(listener_output)
-        value = self.value_fc(listener_output)
-        # TODO: check all shapes
-
-        energy = torch.bmm(query, key)  # TODO: check for shape match
+        # listener_output shape: (batch_size, length, LISTENER_HIDDEN_SIZE * 2)
+        # decoder_state shape: (batch_size, SPELLER_HIDDEN_SIZE)
+        # lengths shape: (batch_size, max_seq_len)
+        query = self.query_fc(decoder_state).unsqueeze(1)  # (batch_size, 1, KEY_QUERY_VAL_DIM)
+        key = self.key_fc(listener_output)  # (batch_size, length, KEY_QUERY_VAL_DIM)
+        value = self.value_fc(listener_output)  # (batch_size, length, CONTEXT_SIZE)
+        energy = torch.bmm(query, key.transpose(1, 2)).squeeze(1)
+        # energy shape: (batch_size, length)
         attention = self.softmax(energy)
         # TODO: mask shape and value check
         mask = attention.data.new(attention.size(0), attention.size(1)).zero_()
@@ -124,7 +132,7 @@ class Attention(nn.Module):
             mask[i, :len] = 1
         masked_attention = F.normalize(mask * attention, p=1)
         # TODO: check for masked_attention
-        context = torch.bmm(masked_attention, value)
+        context = torch.bmm(masked_attention.unsqueeze(1), value).squeeze(1)
         return context
 
 
@@ -144,5 +152,5 @@ class LAS(nn.Module):
 
     def forward(self, inputs, labels, lengths, teacher_forcing_ratio):
         encoder_outputs, hidden, lengths = self.listener(inputs, lengths)
-        decoder_outputs = self.speller(encoder_outputs, teacher_forcing_ratio, labels)
+        decoder_outputs = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
         return decoder_outputs

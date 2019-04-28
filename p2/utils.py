@@ -17,6 +17,7 @@ def calculate_loss(preds, trues, seq_length, criterion):
         # pred shape: (length, 33)
         # true shape: (length)
         true = trues[i]
+        # TODO: potential bug: preds shorter than trues, different mask lengths
         mask = torch.tensor([idx < seq_length[i] for idx in range(true.shape[0])]).to(Config.DEVICE)
         loss = criterion(pred, true)  # tensor
         loss = torch.where(mask > 0, loss, mask.float())

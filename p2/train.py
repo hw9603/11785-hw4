@@ -6,7 +6,7 @@ import torch.nn as nn
 from dataloader import get_loaders
 from config import Config
 from model import Listener, Speller, LAS
-from utils import ER, calculate_loss
+from utils import ER, calculate_loss, plot_grad_flow
 
 
 def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=0.9):
@@ -24,6 +24,8 @@ def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forc
 
         loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
+        # plot the gradient flow
+        plot_grad_flow(model.named_parameters())
         optimizer.step()
         epoch_loss += np.exp(loss.item())
         avg_loss += np.exp(loss.item())
@@ -73,7 +75,7 @@ def main():
     train_loader, dev_loader, test_loader = get_loaders()
     model = LAS()
     optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR)
-    # model.load_state_dict(torch.load("models/LAS2.pt"))
+    model.load_state_dict(torch.load("models/LAS_1.pt"))
     # prediction(test_loader, model, "prediction.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
     for e in range(Config.EPOCHS):

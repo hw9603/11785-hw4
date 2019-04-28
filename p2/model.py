@@ -43,14 +43,15 @@ class Listener(nn.Module):
         x, hidden, lengths = self.pblstm2(x, lengths)
         x, hidden, lengths = self.pblstm3(x, lengths)
         x = self.dropout2(x)
-        return x, hidden
+        return x, hidden, lengths
 
 
 class Speller(nn.Module):
-    def __init__(self, hidden_size, embed_size, context_size, output_size, num_layer=2, max_steps=250):
+    def __init__(self, hidden_size, embed_size, context_size, output_size, attention, num_layer=2, max_steps=250):
         super(Speller, self).__init__()
         self.hidden_size = hidden_size
         self.max_steps = max_steps
+        self.attention = attention
 
         self.embedding = nn.Embedding(output_size, embed_size)
         self.rnn = nn.ModuleList()
@@ -59,10 +60,10 @@ class Speller(nn.Module):
                 self.rnn.append(nn.LSTMCell(embed_size + context_size, hidden_size))
             else:
                 self.rnn.append(nn.LSTMCell(embed_size, hidden_size))
-        self.character_distribution = nn.Linear(hidden_size, output_size)
+        self.character_distribution = nn.Linear(hidden_size + context_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, listener_output, teacher_forcing_ratio, ground_truth=None):
+    def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None):
         if ground_truth is None:
             teacher_forcing_ratio = 0
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
@@ -72,7 +73,7 @@ class Speller(nn.Module):
         states = [None, None]
         outputs = []
         for i in range(self.max_steps) if ground_truth is None else range(ground_truth.shape[1]):
-            output, states = self.forward_step(listener_output, output_char, states)
+            output, states = self.forward_step(listener_output, output_char, states, lengths)
             outputs.append(output)
             if use_teacher_forcing:
                 output_char = ground_truth[:, i]
@@ -80,16 +81,19 @@ class Speller(nn.Module):
                 _, output_char = torch.max(output, dim=1)
         return torch.stack(outputs, dim=1)
 
-    def forward_step(self, listener_output, last_char, states):
+    def forward_step(self, listener_output, last_char, states, lengths):
         embed = self.embedding(last_char.long())
-        # rnn_input = torch.cat((embed, context), dim=1)
-        rnn_input = embed
+        # TODO: states is None initially...
+        context = self.attention(listener_output, states, lengths)
+        rnn_input = torch.cat((embed, context), dim=1)
+        # TODO: check for rnn_input shape
         new_states = []
         for i, cell in enumerate(self.rnn):
             state = cell(rnn_input, states[i])
             new_states.append(state)
         rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
-        output = self.softmax(self.character_distribution(rnn_output))
+        concat_output = torch.cat((rnn_output, context), dim=1)
+        output = self.softmax(self.character_distribution(concat_output))
         return output, new_states
 
 
@@ -122,3 +126,23 @@ class Attention(nn.Module):
         # TODO: check for masked_attention
         context = torch.bmm(masked_attention, value)
         return context
+
+
+class LAS(nn.Module):
+    def __init__(self):
+        super(LAS, self).__init__()
+        self.listener = Listener(input_dim=Config.INPUT_DIM, hidden_dim=Config.LISTENER_HIDDEN_SIZE)
+        self.attention = Attention(key_query_val_dim=Config.KEY_QUERY_VAL_SIZE,
+                                   context_dim=Config.CONTEXT_SIZE,
+                                   listener_dim=Config.LISTENER_HIDDEN_SIZE * 2,
+                                   speller_dim=Config.SPELLER_HIDDEN_SIZE)
+        self.speller = Speller(hidden_size=Config.SPELLER_HIDDEN_SIZE,
+                               embed_size=Config.SPELLER_EMBED_SIZE,
+                               context_size=Config.CONTEXT_SIZE,
+                               output_size=Config.NUM_CLASS,
+                               attention=self.attention)
+
+    def forward(self, inputs, labels, lengths, teacher_forcing_ratio):
+        encoder_outputs, hidden, lengths = self.listener(inputs, lengths)
+        decoder_outputs = self.speller(encoder_outputs, teacher_forcing_ratio, labels)
+        return decoder_outputs

@@ -6,7 +6,7 @@ import torch.nn as nn
 from dataloader import get_loaders
 from config import Config
 from model import Listener, Speller, LAS
-from utils import ER, calculate_loss, plot_grad_flow
+from utils import ER, calculate_loss, plot_grad_flow, plot_attention
 
 
 def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=0.9):
@@ -20,16 +20,19 @@ def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forc
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(train_loader):
         optimizer.zero_grad()
 
-        decoder_outputs = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
+        decoder_outputs, attentions = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
 
         loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
+        char_loss = loss / sum(target_lengths)
         # plot the gradient flow
-        plot_grad_flow(model.named_parameters())
+
+        # plot_attention(attentions)
         optimizer.step()
-        epoch_loss += np.exp(loss.item())
-        avg_loss += np.exp(loss.item())
+        epoch_loss += np.exp(char_loss.item())
+        avg_loss += np.exp(char_loss.item())
         if batch_idx % Config.LOG_INTERVAL == Config.LOG_INTERVAL - 1:
+            # plot_grad_flow(model.named_parameters())
             print("[Train Epoch %d] batch_idx=%d [%.2f%%, time: %.2f min], loss=%.4f" %
                   (e, batch_idx, 100. * batch_idx / len(train_loader), (time.time() - t) / 60,
                    avg_loss / Config.LOG_INTERVAL))
@@ -45,7 +48,7 @@ def eval(loader, model, teacher_forcing_ratio=0.9):
     error = 0
     error_rate_op = ER()
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(loader):
-        decoder_outputs = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
+        decoder_outputs, attentions = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
         error += error_rate_op(decoder_outputs, input_lengths, label_batch)
     print("total error: ", error / loader.dataset.total_chars)
     return error / loader.dataset.total_chars
@@ -60,7 +63,7 @@ def prediction(loader, model, output_file):
     fwrite.write("Id,Predicted\n")
     line = 0
     for batch_idx, (data_batch, _, input_lengths, _) in enumerate(loader):
-        decoder_outputs = model(data_batch, None, input_lengths, 0)
+        decoder_outputs, attentions = model(data_batch, None, input_lengths, 0)
         decode_strs = error_rate_op(decoder_outputs, input_lengths)
         for s in decode_strs:
             if line % Config.LOG_INTERVAL == 0:
@@ -75,12 +78,13 @@ def main():
     train_loader, dev_loader, test_loader = get_loaders()
     model = LAS()
     optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR)
-    model.load_state_dict(torch.load("models/LAS_1.pt"))
+    model.load_state_dict(torch.load("models/LAS0.pt"))
+    # eval(dev_loader, model)
     # prediction(test_loader, model, "prediction.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
     for e in range(Config.EPOCHS):
         train(train_loader, dev_loader, model, optimizer, criterion, e)
-        torch.save(model.state_dict(), "models/LAS" + str(e) + ".pt")
+        torch.save(model.state_dict(), "models/LAS" + str(e+1) + ".pt")
         eval(dev_loader, model)
     print("Done! Yeah~")
 

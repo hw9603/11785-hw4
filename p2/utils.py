@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import torch
 import torch.nn.functional as F
 import Levenshtein as L
@@ -26,7 +27,7 @@ def calculate_loss(preds, trues, seq_length, criterion):
         # sum over sequence
         batch_loss = torch.sum(loss)
         avg_batch_loss += batch_loss
-    avg_batch_loss /= sum(seq_length)
+    # avg_batch_loss /= sum(seq_length)
     return avg_batch_loss
 
 
@@ -49,7 +50,7 @@ def plot_grad_flow(named_parameters):
     plt.hlines(0, 0, len(ave_grads) + 1, lw=2, color="k")
     plt.xticks(range(0, len(ave_grads), 1), layers, rotation="vertical")
     plt.xlim(left=0, right=len(ave_grads))
-    plt.ylim(bottom=-0.001, top=0.02)  # zoom in on the lower gradient regions
+    plt.ylim(bottom=-0.001, top=0.2)  # zoom in on the lower gradient regions
     plt.xlabel("Layers")
     plt.ylabel("average gradient")
     plt.title("Gradient flow")
@@ -59,6 +60,14 @@ def plot_grad_flow(named_parameters):
                 Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
     plt.savefig("plots/grad_flow.png", bbox_inches='tight')
     plt.close()
+
+
+def plot_attention(attentions):
+    for attention_weights in attentions:
+        fig = plt.figure()
+        plt.imshow(attention_weights.cpu().detach().numpy())
+        fig.savefig("plots/attentions/attention-{}.png".format(time.time()))
+        plt.close()
 
 
 class ER:

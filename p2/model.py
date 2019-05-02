@@ -1,4 +1,5 @@
 import random
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.utils.rnn as rnn
@@ -55,15 +56,25 @@ class Speller(nn.Module):
         self.output_size = output_size
         self.max_steps = max_steps
         self.attention = attention
+        self.num_layer = num_layer
 
         self.embedding = nn.Embedding(output_size, embed_size)
         self.rnn = nn.ModuleList()
+        self.inith = nn.ParameterList()
+        self.initc = nn.ParameterList()
         for i in range(num_layer):
             if i == 0:
                 self.rnn.append(nn.LSTMCell(embed_size + context_size, hidden_size))
             else:
                 self.rnn.append(nn.LSTMCell(hidden_size, hidden_size))
-        self.character_distribution = nn.Linear(hidden_size + context_size, output_size)
+            self.inith.append(nn.Parameter(torch.rand(1, hidden_size)))
+            self.initc.append(nn.Parameter(torch.rand(1, hidden_size)))
+        self.unembed = nn.Linear(hidden_size, output_size)
+        self.unembed.weight = self.embedding.weight
+        self.character_distribution = nn.Sequential(
+            nn.Linear(hidden_size + context_size, hidden_size),
+            nn.LeakyReLU(negative_slope=0.2),
+            self.unembed)
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None):
@@ -73,37 +84,42 @@ class Speller(nn.Module):
         # listener_output shape: (batch_size, length, listener_hidden_dim * 2)
         batch_size = listener_output.shape[0]
         output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS)).to(Config.DEVICE)
-        states = [None, None]
+
+        rnn_hidden = [h.repeat(batch_size, 1) for h in self.inith]
+        rnn_cell = [c.repeat(batch_size, 1) for c in self.initc]
+        states = [rnn_hidden, rnn_cell]
         outputs = []
+        attentions = []
+
         for i in range(self.max_steps) if ground_truth is None else range(ground_truth.shape[1]):
-            output, states = self.forward_step(listener_output, output_char, states, lengths)
+            output, masked_attention, states = self.forward_step(listener_output, output_char, states, lengths)
             outputs.append(output)
+            attentions.append(masked_attention)
             if use_teacher_forcing:
                 output_char = ground_truth[:, i]
             else:
-                _, output_char = torch.max(output, dim=1)
-        return torch.stack(outputs, dim=1)
+                if ground_truth is not None:
+                    _, output_char = torch.max(self.softmax(output + np.random.gumbel()), dim=1)
+                else:
+                    _, output_char = torch.max(self.softmax(output), dim=1)
+        return torch.stack(outputs, dim=1), attentions
 
     def forward_step(self, listener_output, last_char, states, lengths):
         embed = self.embedding(last_char.long())
         # embed shape: (batch_size, SPELLER_EMBED_SIZE)
-        if states[0] is None:
-            # assign 0's to context at the first time step
-            context = torch.zeros(embed.shape[0], self.context_size).to(Config.DEVICE)
-            # context shape: (batch_size, CONTEXT_SIZE)
-        else:
-            context = self.attention(listener_output, states[-1][0], lengths)
+        old_hidden, old_cell = states[0], states[1]
+        context, masked_attention = self.attention(listener_output, old_hidden[-1], lengths)
+        # context shape: (batch_size, CONTEXT_SIZE)
         rnn_input = torch.cat((embed, context), dim=1)
         # rnn_input: (batch_size, SPELLER_EMBED_SIZE + CONTEXT_SIZE)
-        new_states = []
+        new_hidden, new_cell = [None] * self.num_layer, [None] * self.num_layer
         for i, cell in enumerate(self.rnn):
-            state = cell(rnn_input, states[i])
-            new_states.append(state)
-            rnn_input = state[0]
-        rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
+            new_hidden[i], new_cell[i] = cell(rnn_input, (old_hidden[i], old_cell[i]))
+            rnn_input = new_hidden[i]
+        rnn_output = new_hidden[-1]  # hidden state of the last RNN layer
         concat_output = torch.cat((rnn_output, context), dim=1)
-        output = self.softmax(self.character_distribution(concat_output))
-        return output, new_states
+        output = self.character_distribution(concat_output)
+        return output, masked_attention, [new_hidden, new_cell]
 
 
 class Attention(nn.Module):
@@ -114,15 +130,15 @@ class Attention(nn.Module):
         self.value_fc = nn.Linear(listener_dim, context_dim)  # mlp for value
 
         self.softmax = nn.Softmax()
-        # TODO: do i need to add activation function?
+        self.activate = torch.nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, listener_output, decoder_state, lengths):
         # listener_output shape: (batch_size, length, LISTENER_HIDDEN_SIZE * 2)
         # decoder_state shape: (batch_size, SPELLER_HIDDEN_SIZE)
         # lengths shape: (batch_size, max_seq_len)
-        query = self.query_fc(decoder_state).unsqueeze(1)  # (batch_size, 1, KEY_QUERY_VAL_DIM)
-        key = self.key_fc(listener_output)  # (batch_size, length, KEY_QUERY_VAL_DIM)
-        value = self.value_fc(listener_output)  # (batch_size, length, CONTEXT_SIZE)
+        query = self.activate(self.query_fc(decoder_state).unsqueeze(1))  # (batch_size, 1, KEY_QUERY_VAL_DIM)
+        key = self.activate(self.key_fc(listener_output))  # (batch_size, length, KEY_QUERY_VAL_DIM)
+        value = self.activate(self.value_fc(listener_output))  # (batch_size, length, CONTEXT_SIZE)
         energy = torch.bmm(query, key.transpose(1, 2)).squeeze(1)
         # energy shape: (batch_size, length)
         attention = self.softmax(energy)
@@ -133,7 +149,7 @@ class Attention(nn.Module):
         masked_attention = F.normalize(mask * attention, p=1)
         # TODO: check for masked_attention
         context = torch.bmm(masked_attention.unsqueeze(1), value).squeeze(1)
-        return context
+        return context, masked_attention
 
 
 class LAS(nn.Module):
@@ -152,5 +168,5 @@ class LAS(nn.Module):
 
     def forward(self, inputs, labels, lengths, teacher_forcing_ratio):
         encoder_outputs, hidden, lengths = self.listener(inputs, lengths)
-        decoder_outputs = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
-        return decoder_outputs
+        decoder_outputs, attentions = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
+        return decoder_outputs, attentions

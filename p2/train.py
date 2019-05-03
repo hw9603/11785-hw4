@@ -64,6 +64,7 @@ def prediction(loader, model, output_file):
     line = 0
     for batch_idx, (data_batch, _, input_lengths, _) in enumerate(loader):
         decoder_outputs, attentions = model(data_batch, None, input_lengths, 0)
+        # plot_attention(attentions)
         decode_strs = error_rate_op(decoder_outputs, input_lengths)
         for s in decode_strs:
             if line % Config.LOG_INTERVAL == 0:
@@ -78,14 +79,19 @@ def main():
     train_loader, dev_loader, test_loader = get_loaders()
     model = LAS()
     optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR)
-    model.load_state_dict(torch.load("models/LAS0.pt"))
+    # model.load_state_dict(torch.load("models/LAS21.pt"))
     # eval(dev_loader, model)
     # prediction(test_loader, model, "prediction.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
+    teacher_force = 0.9
     for e in range(Config.EPOCHS):
-        train(train_loader, dev_loader, model, optimizer, criterion, e)
-        torch.save(model.state_dict(), "models/LAS" + str(e+1) + ".pt")
-        eval(dev_loader, model)
+        train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=teacher_force)
+        if teacher_force > 0.8:
+            teacher_force -= 0.005
+        torch.save(model.state_dict(), "models/LAS2_{}.pt".format(e))
+        # eval(dev_loader, model)
+        if e < 5 or e % 2 == 0:
+            prediction(test_loader, model, "prediction_{}.csv".format(e))
     print("Done! Yeah~")
 
 

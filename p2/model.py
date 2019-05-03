@@ -9,6 +9,19 @@ from config import Config
 from character_list import CHARACTER_LIST
 
 
+class LockedDropout(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, dropout=0.5):
+        if not self.training or not dropout:
+            return x
+        m = x.data.new(1, x.size(1), x.size(2)).bernoulli_(1 - dropout)
+        mask = Variable(m, requires_grad=False) / (1 - dropout)
+        mask = mask.expand_as(x)
+        return mask * x
+
+
 class pBLSTM(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(pBLSTM, self).__init__()
@@ -36,14 +49,18 @@ class Listener(nn.Module):
         self.pblstm1 = pBLSTM(input_dim, hidden_dim)
         self.pblstm2 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm3 = pBLSTM(hidden_dim * 2, hidden_dim)
+        self.lockdropout = LockedDropout()
         self.dropout2 = nn.Dropout(p=0.3)
 
     def forward(self, x, lengths):
         # x shape: (batch_size, length, dim)
         x, hidden, lengths = self.pblstm1(x, lengths)
+        x = self.lockdropout(x, 0.1)
         x, hidden, lengths = self.pblstm2(x, lengths)
+        x = self.lockdropout(x, 0.1)
         x, hidden, lengths = self.pblstm3(x, lengths)
-        x = self.dropout2(x)
+        x = self.lockdropout(x, 0.2)
+        # x = self.dropout2(x)
         return x, hidden, lengths
 
 

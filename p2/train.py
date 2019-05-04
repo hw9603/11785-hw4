@@ -48,9 +48,11 @@ def eval(loader, model, teacher_forcing_ratio=0.9):
     error = 0
     error_rate_op = ER()
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(loader):
-        decoder_outputs, attentions = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
+        decoder_outputs, attentions = model(data_batch,
+                                            label_batch if teacher_forcing_ratio != 0 else None,
+                                            input_lengths, teacher_forcing_ratio)
         error += error_rate_op(decoder_outputs, input_lengths, label_batch)
-    print("total error: ", error / loader.dataset.total_chars)
+    print("total error: ", error * 100 / loader.dataset.total_chars)
     return error / loader.dataset.total_chars
 
 
@@ -78,20 +80,21 @@ def main():
     print(Config.DEVICE)
     train_loader, dev_loader, test_loader = get_loaders()
     model = LAS()
-    optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR)
-    # model.load_state_dict(torch.load("models/LAS21.pt"))
-    # eval(dev_loader, model)
+    optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR, weight_decay=Config.WDECAY)
+    # model.load_state_dict(torch.load("models/LAS3/LAS3_22.pt"))
+    # eval(dev_loader, model, teacher_forcing_ratio=0)
     # prediction(test_loader, model, "prediction.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
     teacher_force = 0.9
     for e in range(Config.EPOCHS):
+        print("--------teacher force: {}---------".format(teacher_force))
         train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=teacher_force)
-        if teacher_force > 0.8:
-            teacher_force -= 0.005
-        torch.save(model.state_dict(), "models/LAS2_{}.pt".format(e))
-        # eval(dev_loader, model)
-        if e < 5 or e % 2 == 0:
-            prediction(test_loader, model, "prediction_{}.csv".format(e))
+        if teacher_force > 0.7:
+            teacher_force -= 0.01
+        torch.save(model.state_dict(), "models/LAS3/LAS3_{}.pt".format(e))
+        eval(dev_loader, model, teacher_forcing_ratio=0)
+        # if e % 5 == 0:
+        #     prediction(test_loader, model, "prediction_{}.csv".format(e+3))
     print("Done! Yeah~")
 
 

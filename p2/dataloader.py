@@ -72,7 +72,7 @@ def get_loaders():
     test_dataset = SpeechDataset(test_x, y=None, is_test=True)
 
     train_loader = DataLoader(train_dataset, shuffle=True, batch_size=Config.BATCH_SIZE, collate_fn=collate_speech)
-    dev_loader = DataLoader(dev_dataset, shuffle=True, batch_size=Config.BATCH_SIZE, collate_fn=collate_speech)
+    dev_loader = DataLoader(dev_dataset, shuffle=True, batch_size=Config.DEV_BATCH_SIZE, collate_fn=collate_speech)
     test_loader = DataLoader(test_dataset, shuffle=False, batch_size=1, collate_fn=collate_speech)
 
     return train_loader, dev_loader, test_loader

@@ -46,7 +46,8 @@ class pBLSTM(nn.Module):
 class Listener(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(Listener, self).__init__()
-        self.pblstm1 = pBLSTM(input_dim, hidden_dim)
+        self.blstm = nn.LSTM(input_dim, hidden_dim, 1, batch_first=True, bidirectional=True)
+        self.pblstm1 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm2 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm3 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.lockdropout = LockedDropout()
@@ -54,6 +55,7 @@ class Listener(nn.Module):
 
     def forward(self, x, lengths):
         # x shape: (batch_size, length, dim)
+        x, _ = self.blstm(x)
         x, hidden, lengths = self.pblstm1(x, lengths)
         x = self.lockdropout(x, 0.1)
         x, hidden, lengths = self.pblstm2(x, lengths)
@@ -94,7 +96,7 @@ class Speller(nn.Module):
             self.unembed)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None):
+    def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None, dropout=[]):
         if ground_truth is None:
             teacher_forcing_ratio = 0
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
@@ -105,11 +107,23 @@ class Speller(nn.Module):
         rnn_hidden = [h.repeat(batch_size, 1) for h in self.inith]
         rnn_cell = [c.repeat(batch_size, 1) for c in self.initc]
         states = [rnn_hidden, rnn_cell]
+
+        """dropout"""
+        dropout_masks = []
+        if dropout and self.training:
+            h = states[0][0]  # B, C
+            n_layers = len(states[0])
+            for i in range(n_layers):
+                mask = h.data.new(h.size(0), h.size(1)).bernoulli_(1 - dropout[i]) / (1 - dropout[i])
+                dropout_masks.append(Variable(mask, requires_grad=False))
+        """end"""
+
         outputs = []
         attentions = []
 
         for i in range(self.max_steps) if ground_truth is None else range(ground_truth.shape[1]):
-            output, masked_attention, states = self.forward_step(listener_output, output_char, states, lengths)
+            output, masked_attention, states = self.forward_step(listener_output, output_char, states, lengths,
+                                                                 dropout_masks=dropout_masks)
             outputs.append(output)
             attentions.append(masked_attention)
             if use_teacher_forcing:
@@ -121,7 +135,7 @@ class Speller(nn.Module):
                     _, output_char = torch.max(self.softmax(output), dim=1)
         return torch.stack(outputs, dim=1), attentions
 
-    def forward_step(self, listener_output, last_char, states, lengths):
+    def forward_step(self, listener_output, last_char, states, lengths, dropout_masks=None):
         embed = self.embedding(last_char.long())
         # embed shape: (batch_size, SPELLER_EMBED_SIZE)
         old_hidden, old_cell = states[0], states[1]
@@ -132,7 +146,10 @@ class Speller(nn.Module):
         new_hidden, new_cell = [None] * self.num_layer, [None] * self.num_layer
         for i, cell in enumerate(self.rnn):
             new_hidden[i], new_cell[i] = cell(rnn_input, (old_hidden[i], old_cell[i]))
-            rnn_input = new_hidden[i]
+            if dropout_masks:
+                rnn_input = new_hidden[i] * dropout_masks[i]
+            else:
+                rnn_input = new_hidden[i]
         rnn_output = new_hidden[-1]  # hidden state of the last RNN layer
         concat_output = torch.cat((rnn_output, context), dim=1)
         output = self.character_distribution(concat_output)
@@ -185,5 +202,6 @@ class LAS(nn.Module):
 
     def forward(self, inputs, labels, lengths, teacher_forcing_ratio):
         encoder_outputs, hidden, lengths = self.listener(inputs, lengths)
-        decoder_outputs, attentions = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
+        decoder_outputs, attentions = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels,
+                                                   dropout=[0.1, 0.1])
         return decoder_outputs, attentions

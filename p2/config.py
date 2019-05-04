@@ -4,9 +4,11 @@ import torch
 class Config:
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     BATCH_SIZE = 24
-    LOG_INTERVAL = 10
-    LR = 1e-3
-    EPOCHS = 10
+    DEV_BATCH_SIZE = 16
+    LOG_INTERVAL = 20
+    LR = 1e-4
+    WDECAY = 1.2e-6
+    EPOCHS = 4
 
     INPUT_DIM = 40
     LISTENER_HIDDEN_SIZE = 256

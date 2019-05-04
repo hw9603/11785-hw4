@@ -106,7 +106,7 @@ class ER:
                 ls = 0.
                 for p, t in zip(pred, true):
                     ls += L.distance(p, t)
-                print("PER:", ls * 100 / sum(len(s) for s in true))
+                # print("PER:", ls * 100 / sum(len(s) for s in true))
                 return ls
         else:
             return pred

@@ -6,6 +6,7 @@ import torch.nn as nn
 from dataloader import get_loaders
 from config import Config
 from model import Listener, Speller, LAS
+from baseline import Seq2Seq
 from utils import ER, calculate_loss, plot_grad_flow, plot_attention
 
 
@@ -79,9 +80,11 @@ def prediction(loader, model, output_file):
 def main():
     print(Config.DEVICE)
     train_loader, dev_loader, test_loader = get_loaders()
-    model = LAS()
+
+    model = Seq2Seq(base=Config.LISTENER_HIDDEN_SIZE, out_dim=Config.NUM_CLASS)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR, weight_decay=Config.WDECAY)
-    # model.load_state_dict(torch.load("models/LAS3/LAS3_22.pt"))
+    # model.load_state_dict(torch.load("models/LAS3/LAS3_20.pt"))
     # eval(dev_loader, model, teacher_forcing_ratio=0)
     # prediction(test_loader, model, "prediction.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
@@ -91,7 +94,7 @@ def main():
         train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=teacher_force)
         if teacher_force > 0.7:
             teacher_force -= 0.01
-        torch.save(model.state_dict(), "models/LAS3/LAS3_{}.pt".format(e))
+        torch.save(model.state_dict(), "models/LAS_baseline/LAS_{}.pt".format(e))
         eval(dev_loader, model, teacher_forcing_ratio=0)
         # if e % 5 == 0:
         #     prediction(test_loader, model, "prediction_{}.csv".format(e+3))

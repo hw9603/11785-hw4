@@ -8,7 +8,7 @@ class Config:
     LOG_INTERVAL = 20
     LR = 1e-4
     WDECAY = 1.2e-6
-    EPOCHS = 4
+    EPOCHS = 10
 
     INPUT_DIM = 40
     LISTENER_HIDDEN_SIZE = 256

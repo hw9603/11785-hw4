@@ -119,7 +119,7 @@ class Seq2Seq(nn.Module):
         max_len, batch_size = words.shape[0], words.shape[1]
         prediction = torch.zeros(max_len, batch_size, self.out_dim).to(self.device)
 
-        word, hidden1, cell1, hidden2, cell2 = words[0,:], None, None, None, None
+        word, hidden1, cell1, hidden2, cell2 = words[0, :], None, None, None, None
 
         lens, key, value, hidden2 = self.encoder(inputs)
         mask = torch.arange(lens.max()).unsqueeze(0) < lens.unsqueeze(1)

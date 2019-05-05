@@ -20,16 +20,16 @@ class Encoder(nn.Module):
         self.drop = LockedDrop(.05)
 
     def _stride2(self, x):
-        x = x[:x.size(0)//2*2]
+        x = x[:x.size(0) // 2 * 2]
         x = self.drop(x)
-        x = x.permute(1, 0, 2) # seq, batch, feature -> batch, seq, feature
-        x = x.reshape(x.size(0), x.size(1)//2, x.size(2)*2)
-        x = x.permute(1, 0, 2) # batch, seq, feature -> seq, batch, feature
+        x = x.permute(1, 0, 2)  # seq, batch, feature -> batch, seq, feature
+        x = x.reshape(x.size(0), x.size(1) // 2, x.size(2) * 2)
+        x = x.permute(1, 0, 2)  # batch, seq, feature -> seq, batch, feature
         return x
 
     def __make_layer__(self, in_dim, out_dim):
         lstm = nn.LSTM(input_size=in_dim, hidden_size=out_dim, bidirectional=True)
-        return WeightDrop(lstm, ['weight_hh_l0','weight_hh_l0_reverse'],
+        return WeightDrop(lstm, ['weight_hh_l0', 'weight_hh_l0_reverse'],
                           dropout=0.1, variational=True)
 
     def forward(self, x):
@@ -54,7 +54,7 @@ class Encoder(nn.Module):
 
         key = self.act(self.fc1(x))
         value = self.act(self.fc2(x))
-        hidden = torch.cat([hidden[0,:,:], hidden[1,:,:]], dim=1)
+        hidden = torch.cat([hidden[0, :, :], hidden[1, :, :]], dim=1)
         return seq_len//8, key, value, hidden
 
 

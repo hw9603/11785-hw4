@@ -7,7 +7,7 @@ class Config:
     DEV_BATCH_SIZE = 16
     LOG_INTERVAL = 20
     LR = 1e-4
-    WDECAY = 1.2e-6
+    WDECAY = 1e-5
     EPOCHS = 10
 
     INPUT_DIM = 40

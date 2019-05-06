@@ -21,7 +21,7 @@ def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forc
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(train_loader):
         optimizer.zero_grad()
 
-        decoder_outputs, attentions = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
+        decoder_outputs = model(data_batch, label_batch, teacher_forcing_ratio)
 
         loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
@@ -51,7 +51,7 @@ def eval(loader, model, teacher_forcing_ratio=0.9):
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(loader):
         decoder_outputs, attentions = model(data_batch,
                                             label_batch if teacher_forcing_ratio != 0 else None,
-                                            input_lengths, teacher_forcing_ratio)
+                                            teacher_forcing_ratio)
         error += error_rate_op(decoder_outputs, input_lengths, label_batch)
     print("total error: ", error * 100 / loader.dataset.total_chars)
     return error / loader.dataset.total_chars

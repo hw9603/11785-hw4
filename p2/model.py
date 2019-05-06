@@ -62,15 +62,11 @@ class Speller(nn.Module):
 
         self.embedding = nn.Embedding(output_size, embed_size)
         self.rnn = nn.ModuleList()
-        self.inith = nn.ParameterList()
-        self.initc = nn.ParameterList()
         for i in range(num_layer):
             if i == 0:
                 self.rnn.append(nn.LSTMCell(embed_size + context_size, hidden_size))
             else:
                 self.rnn.append(nn.LSTMCell(hidden_size, hidden_size))
-            self.inith.append(nn.Parameter(torch.rand(1, hidden_size)))
-            self.initc.append(nn.Parameter(torch.rand(1, hidden_size)))
         self.unembed = nn.Linear(hidden_size, output_size)
         self.unembed.weight = self.embedding.weight
         self.character_distribution = nn.Sequential(
@@ -87,9 +83,7 @@ class Speller(nn.Module):
         batch_size = listener_output.shape[0]
         output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS)).to(Config.DEVICE)
 
-        rnn_hidden = [h.repeat(batch_size, 1) for h in self.inith]
-        rnn_cell = [c.repeat(batch_size, 1) for c in self.initc]
-        states = [rnn_hidden, rnn_cell]
+        states = [None, None]
 
         outputs = []
         attentions = []
@@ -110,19 +104,22 @@ class Speller(nn.Module):
     def forward_step(self, listener_output, last_char, states, lengths):
         embed = self.embedding(last_char.long())
         # embed shape: (batch_size, SPELLER_EMBED_SIZE)
-        old_hidden, old_cell = states[0], states[1]
-        context, masked_attention = self.attention(listener_output, old_hidden[-1], lengths)
+        if states[0] is None:
+            context, masked_attention = torch.zeros(embed.shape[0], self.context_size).to(Config.DEVICE)
+        else:
+            context, masked_attention = self.attention(listener_output, states[-1][0], lengths)
         # context shape: (batch_size, CONTEXT_SIZE)
         rnn_input = torch.cat((embed, context), dim=1)
         # rnn_input: (batch_size, SPELLER_EMBED_SIZE + CONTEXT_SIZE)
-        new_hidden, new_cell = [None] * self.num_layer, [None] * self.num_layer
+        new_states = []
         for i, cell in enumerate(self.rnn):
-            new_hidden[i], new_cell[i] = cell(rnn_input, (old_hidden[i], old_cell[i]))
-            rnn_input = new_hidden[i]
-        rnn_output = new_hidden[-1]  # hidden state of the last RNN layer
+            state = cell(rnn_input, states[i])
+            new_states.append(state)
+            rnn_input = state[0]
+        rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
         concat_output = torch.cat((rnn_output, context), dim=1)
         output = self.character_distribution(concat_output)
-        return output, masked_attention, [new_hidden, new_cell]
+        return output, masked_attention, new_states
 
 
 class Attention(nn.Module):

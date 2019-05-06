@@ -6,7 +6,7 @@ import torch.nn as nn
 from dataloader import get_loaders
 from config import Config
 from model import Listener, Speller, LAS
-from utils import ER, calculate_loss, plot_grad_flow, plot_attention
+from utils import ER, calculate_loss
 
 
 def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=0.9):
@@ -25,14 +25,10 @@ def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forc
         loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
         char_loss = loss / sum(target_lengths)
-        # plot the gradient flow
-
-        # plot_attention(attentions)
         optimizer.step()
         epoch_loss += np.exp(char_loss.item())
         avg_loss += np.exp(char_loss.item())
         if batch_idx % Config.LOG_INTERVAL == Config.LOG_INTERVAL - 1:
-            # plot_grad_flow(model.named_parameters())
             print("[Train Epoch %d] batch_idx=%d [%.2f%%, time: %.2f min], loss=%.4f" %
                   (e, batch_idx, 100. * batch_idx / len(train_loader), (time.time() - t) / 60,
                    avg_loss / Config.LOG_INTERVAL))
@@ -51,6 +47,7 @@ def eval(loader, model, teacher_forcing_ratio=0.9):
         decoder_outputs, attentions = model(data_batch,
                                             label_batch if teacher_forcing_ratio != 0 else None,
                                             input_lengths, teacher_forcing_ratio)
+
         error += error_rate_op(decoder_outputs, input_lengths, label_batch)
     print("total error: ", error * 100 / loader.dataset.total_chars)
     return error / loader.dataset.total_chars
@@ -66,7 +63,6 @@ def prediction(loader, model, output_file):
     line = 0
     for batch_idx, (data_batch, _, input_lengths, _) in enumerate(loader):
         decoder_outputs, attentions = model(data_batch, None, input_lengths, 0)
-        # plot_attention(attentions)
         decode_strs = error_rate_op(decoder_outputs, input_lengths)
         for s in decode_strs:
             if line % Config.LOG_INTERVAL == 0:
@@ -81,11 +77,11 @@ def main():
     train_loader, dev_loader, test_loader = get_loaders()
     model = LAS()
     optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR, weight_decay=Config.WDECAY)
-    # model.load_state_dict(torch.load("models/LAS3/LAS3_22.pt"))
-    # eval(dev_loader, model, teacher_forcing_ratio=0)
-    # prediction(test_loader, model, "prediction.csv")
+    model.load_state_dict(torch.load("models/LAS3/LAS3_20.pt"))
+    eval(dev_loader, model, teacher_forcing_ratio=0)
+    # prediction(test_loader, model, "prediction_.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
-    teacher_force = 0.9
+    teacher_force = 0.7
     for e in range(Config.EPOCHS):
         print("--------teacher force: {}---------".format(teacher_force))
         train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=teacher_force)

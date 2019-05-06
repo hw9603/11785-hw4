@@ -9,19 +9,6 @@ from config import Config
 from character_list import CHARACTER_LIST
 
 
-class LockedDropout(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x, dropout=0.5):
-        if not self.training or not dropout:
-            return x
-        m = x.data.new(1, x.size(1), x.size(2)).bernoulli_(1 - dropout)
-        mask = Variable(m, requires_grad=False) / (1 - dropout)
-        mask = mask.expand_as(x)
-        return mask * x
-
-
 class pBLSTM(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(pBLSTM, self).__init__()
@@ -50,19 +37,15 @@ class Listener(nn.Module):
         self.pblstm1 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm2 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm3 = pBLSTM(hidden_dim * 2, hidden_dim)
-        self.lockdropout = LockedDropout()
         self.dropout2 = nn.Dropout(p=0.3)
 
     def forward(self, x, lengths):
         # x shape: (batch_size, length, dim)
         x, _ = self.blstm(x)
         x, hidden, lengths = self.pblstm1(x, lengths)
-        x = self.lockdropout(x, 0.1)
         x, hidden, lengths = self.pblstm2(x, lengths)
-        x = self.lockdropout(x, 0.1)
         x, hidden, lengths = self.pblstm3(x, lengths)
-        x = self.lockdropout(x, 0.2)
-        # x = self.dropout2(x)
+        x = self.dropout2(x)
         return x, hidden, lengths
 
 
@@ -96,7 +79,7 @@ class Speller(nn.Module):
             self.unembed)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None, dropout=[]):
+    def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None):
         if ground_truth is None:
             teacher_forcing_ratio = 0
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
@@ -108,22 +91,11 @@ class Speller(nn.Module):
         rnn_cell = [c.repeat(batch_size, 1) for c in self.initc]
         states = [rnn_hidden, rnn_cell]
 
-        """dropout"""
-        dropout_masks = []
-        if dropout and self.training:
-            h = states[0][0]  # B, C
-            n_layers = len(states[0])
-            for i in range(n_layers):
-                mask = h.data.new(h.size(0), h.size(1)).bernoulli_(1 - dropout[i]) / (1 - dropout[i])
-                dropout_masks.append(Variable(mask, requires_grad=False))
-        """end"""
-
         outputs = []
         attentions = []
 
         for i in range(self.max_steps) if ground_truth is None else range(ground_truth.shape[1]):
-            output, masked_attention, states = self.forward_step(listener_output, output_char, states, lengths,
-                                                                 dropout_masks=dropout_masks)
+            output, masked_attention, states = self.forward_step(listener_output, output_char, states, lengths)
             outputs.append(output)
             attentions.append(masked_attention)
             if use_teacher_forcing:
@@ -135,7 +107,7 @@ class Speller(nn.Module):
                     _, output_char = torch.max(self.softmax(output), dim=1)
         return torch.stack(outputs, dim=1), attentions
 
-    def forward_step(self, listener_output, last_char, states, lengths, dropout_masks=None):
+    def forward_step(self, listener_output, last_char, states, lengths):
         embed = self.embedding(last_char.long())
         # embed shape: (batch_size, SPELLER_EMBED_SIZE)
         old_hidden, old_cell = states[0], states[1]
@@ -146,10 +118,7 @@ class Speller(nn.Module):
         new_hidden, new_cell = [None] * self.num_layer, [None] * self.num_layer
         for i, cell in enumerate(self.rnn):
             new_hidden[i], new_cell[i] = cell(rnn_input, (old_hidden[i], old_cell[i]))
-            if dropout_masks:
-                rnn_input = new_hidden[i] * dropout_masks[i]
-            else:
-                rnn_input = new_hidden[i]
+            rnn_input = new_hidden[i]
         rnn_output = new_hidden[-1]  # hidden state of the last RNN layer
         concat_output = torch.cat((rnn_output, context), dim=1)
         output = self.character_distribution(concat_output)
@@ -202,6 +171,5 @@ class LAS(nn.Module):
 
     def forward(self, inputs, labels, lengths, teacher_forcing_ratio):
         encoder_outputs, hidden, lengths = self.listener(inputs, lengths)
-        decoder_outputs, attentions = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels,
-                                                   dropout=[0.1, 0.1])
+        decoder_outputs, attentions = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
         return decoder_outputs, attentions

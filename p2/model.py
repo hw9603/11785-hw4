@@ -67,12 +67,7 @@ class Speller(nn.Module):
                 self.rnn.append(nn.LSTMCell(embed_size + context_size, hidden_size))
             else:
                 self.rnn.append(nn.LSTMCell(hidden_size, hidden_size))
-        self.unembed = nn.Linear(hidden_size, output_size)
-        self.unembed.weight = self.embedding.weight
-        self.character_distribution = nn.Sequential(
-            nn.Linear(hidden_size + context_size, hidden_size),
-            nn.LeakyReLU(negative_slope=0.2),
-            self.unembed)
+        self.character_distribution = nn.Linear(hidden_size + context_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, listener_output, teacher_forcing_ratio, lengths, ground_truth=None):
@@ -130,7 +125,7 @@ class Attention(nn.Module):
         self.value_fc = nn.Linear(listener_dim, context_dim)  # mlp for value
 
         self.softmax = nn.Softmax()
-        self.activate = torch.nn.LeakyReLU(negative_slope=0.2)
+        self.activate = nn.SELU(True)
 
     def forward(self, listener_output, decoder_state, lengths):
         # listener_output shape: (batch_size, length, LISTENER_HIDDEN_SIZE * 2)

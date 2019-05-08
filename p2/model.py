@@ -20,7 +20,6 @@ class pBLSTM(nn.Module):
         feature_dim = x.shape[2]
         if seq_length % 2 != 0:
             x = x[:, :-1, :]
-            seq_length -= 1
         # reduce the timestep
         padded_input = x.contiguous().view(batch_size, int(seq_length // 2), feature_dim * 2)
         lengths = [l // 2 for l in lengths]

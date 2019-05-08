@@ -37,7 +37,7 @@ class Listener(nn.Module):
         self.pblstm1 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm2 = pBLSTM(hidden_dim * 2, hidden_dim)
         self.pblstm3 = pBLSTM(hidden_dim * 2, hidden_dim)
-        self.dropout2 = nn.Dropout(p=0.3)
+        self.dropout = nn.Dropout(p=0.3)
 
     def forward(self, x, lengths):
         # x shape: (batch_size, length, dim)
@@ -45,7 +45,7 @@ class Listener(nn.Module):
         x, hidden, lengths = self.pblstm1(x, lengths)
         x, hidden, lengths = self.pblstm2(x, lengths)
         x, hidden, lengths = self.pblstm3(x, lengths)
-        x = self.dropout2(x)
+        x = self.dropout(x)
         return x, hidden, lengths
 
 

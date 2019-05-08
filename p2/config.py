@@ -6,7 +6,7 @@ class Config:
     BATCH_SIZE = 24
     DEV_BATCH_SIZE = 16
     LOG_INTERVAL = 20
-    LR = 1e-4
+    LR = 1e-3
     WDECAY = 1.2e-6
     EPOCHS = 4
 

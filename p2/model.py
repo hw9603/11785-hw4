@@ -18,9 +18,8 @@ class pBLSTM(nn.Module):
         batch_size = x.shape[0]
         seq_length = x.shape[1]
         feature_dim = x.shape[2]
-        if seq_length % 2 != 0:
-            x = x[:, :-1, :]
-            seq_length -= 1
+        x = x[:, :-seq_length % 2, :]
+        seq_length -= seq_length % 2
         # reduce the timestep
         padded_input = x.contiguous().view(batch_size, int(seq_length // 2), feature_dim * 2)
         lengths = [l // 2 for l in lengths]
@@ -76,6 +75,7 @@ class Speller(nn.Module):
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
         # listener_output shape: (batch_size, length, listener_hidden_dim * 2)
         batch_size = listener_output.shape[0]
+        # TODO
         output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS)).to(Config.DEVICE)
 
         states = [None, None]

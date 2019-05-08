@@ -18,8 +18,9 @@ class pBLSTM(nn.Module):
         batch_size = x.shape[0]
         seq_length = x.shape[1]
         feature_dim = x.shape[2]
-        x = x[:, :-seq_length % 2, :]
-        seq_length -= seq_length % 2
+        if seq_length % 2 != 0:
+            x = x[:, :-1, :]
+            seq_length -= 1
         # reduce the timestep
         padded_input = x.contiguous().view(batch_size, int(seq_length // 2), feature_dim * 2)
         lengths = [l // 2 for l in lengths]
@@ -75,18 +76,19 @@ class Speller(nn.Module):
         use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
         # listener_output shape: (batch_size, length, listener_hidden_dim * 2)
         batch_size = listener_output.shape[0]
-        # TODO
-        output_char = torch.zeros(batch_size).fill_(CHARACTER_LIST.index(Config.EOS)).to(Config.DEVICE)
-
+        output_char = torch.zeros(batch_size).to(Config.DEVICE)
         states = [None, None]
 
         outputs = []
-        attentions = []
 
-        for i in range(self.max_steps) if ground_truth is None else range(ground_truth.shape[1]):
-            output, masked_attention, states = self.forward_step(listener_output, output_char, states, lengths)
+        if ground_truth is None:
+            num_step = self.max_steps
+        else:
+            num_step = ground_truth.shape[1]
+
+        for i in range(num_step):
+            output, states = self.forward_step(listener_output, output_char, states, lengths)
             outputs.append(output)
-            attentions.append(masked_attention)
             if use_teacher_forcing:
                 output_char = ground_truth[:, i]
             else:
@@ -94,15 +96,15 @@ class Speller(nn.Module):
                     _, output_char = torch.max(self.softmax(output + np.random.gumbel()), dim=1)
                 else:
                     _, output_char = torch.max(self.softmax(output), dim=1)
-        return torch.stack(outputs, dim=1), attentions
+        return torch.stack(outputs, dim=1)
 
     def forward_step(self, listener_output, last_char, states, lengths):
         embed = self.embedding(last_char.long())
         # embed shape: (batch_size, SPELLER_EMBED_SIZE)
         if states[0] is None:
-            context, masked_attention = torch.zeros(embed.shape[0], self.context_size).to(Config.DEVICE)
+            context = torch.zeros(embed.shape[0], self.context_size).to(Config.DEVICE)
         else:
-            context, masked_attention = self.attention(listener_output, states[-1][0], lengths)
+            context = self.attention(listener_output, states[-1][0], lengths)
         # context shape: (batch_size, CONTEXT_SIZE)
         rnn_input = torch.cat((embed, context), dim=1)
         # rnn_input: (batch_size, SPELLER_EMBED_SIZE + CONTEXT_SIZE)
@@ -114,7 +116,7 @@ class Speller(nn.Module):
         rnn_output = new_states[-1][0]  # hidden state of the last RNN layer
         concat_output = torch.cat((rnn_output, context), dim=1)
         output = self.character_distribution(concat_output)
-        return output, masked_attention, new_states
+        return output, new_states
 
 
 class Attention(nn.Module):
@@ -138,13 +140,13 @@ class Attention(nn.Module):
         # energy shape: (batch_size, length)
         attention = self.softmax(energy)
         # TODO: mask shape and value check
-        mask = attention.data.new(attention.size(0), attention.size(1)).zero_()
+        mask = torch.zeros(attention.size(0), attention.size(1)).to(Config.DEVICE)
         for i, len in enumerate(lengths):
             mask[i, :len] = 1
         masked_attention = F.normalize(mask * attention, p=1)
         # TODO: check for masked_attention
         context = torch.bmm(masked_attention.unsqueeze(1), value).squeeze(1)
-        return context, masked_attention
+        return context
 
 
 class LAS(nn.Module):
@@ -163,5 +165,5 @@ class LAS(nn.Module):
 
     def forward(self, inputs, labels, lengths, teacher_forcing_ratio):
         encoder_outputs, hidden, lengths = self.listener(inputs, lengths)
-        decoder_outputs, attentions = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
-        return decoder_outputs, attentions
+        decoder_outputs = self.speller(encoder_outputs, teacher_forcing_ratio, lengths, labels)
+        return decoder_outputs

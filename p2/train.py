@@ -20,7 +20,7 @@ def train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forc
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(train_loader):
         optimizer.zero_grad()
 
-        decoder_outputs, attentions = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
+        decoder_outputs = model(data_batch, label_batch, input_lengths, teacher_forcing_ratio)
 
         loss = calculate_loss(decoder_outputs, label_batch, target_lengths, criterion)
         loss.backward()
@@ -44,9 +44,9 @@ def eval(loader, model, teacher_forcing_ratio=0.9):
     error = 0
     error_rate_op = ER()
     for batch_idx, (data_batch, label_batch, input_lengths, target_lengths) in enumerate(loader):
-        decoder_outputs, attentions = model(data_batch,
-                                            label_batch if teacher_forcing_ratio != 0 else None,
-                                            input_lengths, teacher_forcing_ratio)
+        decoder_outputs = model(data_batch,
+                                label_batch if teacher_forcing_ratio != 0 else None,
+                                input_lengths, teacher_forcing_ratio)
 
         error += error_rate_op(decoder_outputs, input_lengths, label_batch)
     print("total error: ", error * 100 / loader.dataset.total_chars)
@@ -62,7 +62,7 @@ def prediction(loader, model, output_file):
     fwrite.write("Id,Predicted\n")
     line = 0
     for batch_idx, (data_batch, _, input_lengths, _) in enumerate(loader):
-        decoder_outputs, attentions = model(data_batch, None, input_lengths, 0)
+        decoder_outputs = model(data_batch, None, input_lengths, 0)
         decode_strs = error_rate_op(decoder_outputs, input_lengths)
         for s in decode_strs:
             if line % Config.LOG_INTERVAL == 0:
@@ -77,11 +77,11 @@ def main():
     train_loader, dev_loader, test_loader = get_loaders()
     model = LAS()
     optimizer = torch.optim.Adam(model.parameters(), lr=Config.LR, weight_decay=Config.WDECAY)
-    model.load_state_dict(torch.load("models/LAS3/LAS3_20.pt"))
+    # model.load_state_dict(torch.load("models/LAS3/LAS3_20.pt"))
     eval(dev_loader, model, teacher_forcing_ratio=0)
     # prediction(test_loader, model, "prediction_.csv")
     criterion = nn.CrossEntropyLoss(reduction='none')
-    teacher_force = 0.7
+    teacher_force = 0.9
     for e in range(Config.EPOCHS):
         print("--------teacher force: {}---------".format(teacher_force))
         train(train_loader, dev_loader, model, optimizer, criterion, e, teacher_forcing_ratio=teacher_force)
